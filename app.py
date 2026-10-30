@@ -28,19 +28,19 @@ import streamlit as st
 # ── record definitions ────────────────────────────────────────────────────────
 
 RECORDS = {
-    "ClearAudio 333 Hz": {
-        "fund_hz":  333,
-        "ref_um":    50.0,
-        "ref_r_mm": 125.0,
-        "radius_mm": {50: 125.0, 60: 120.0, 70: 114.0,
-                      80: 108.0, 90: 103.0, 100: 97.0},
-    },
     "Ortofon 315 Hz": {
         "fund_hz":  315,
         "ref_um":    50.0,
         "ref_r_mm": 125.0,
         "radius_mm": {50: 99.0, 60: 92.0, 70: 90.0,
                       80: 88.0, 90: 85.5, 100: 83.5},
+    },
+    "ClearAudio 333 Hz": {
+        "fund_hz":  333,
+        "ref_um":    50.0,
+        "ref_r_mm": 125.0,
+        "radius_mm": {50: 125.0, 60: 120.0, 70: 114.0,
+                      80: 108.0, 90: 103.0, 100: 97.0},
     },
     "CBS STR-112 300 Hz": {
         "fund_hz":  300,
@@ -228,7 +228,7 @@ def fig_to_bytes(fig):
 
 # ── analysis pipeline ─────────────────────────────────────────────────────────
 
-def analyse_wav(wav_bytes, rec, filename, progress_cb):
+def analyse_wav(wav_bytes, rec, filename, progress_cb, description=""):
     fund     = rec["fund_hz"]
     levels   = sorted(rec["radius_mm"].keys())
     ref_um   = rec["ref_um"]
@@ -283,12 +283,15 @@ def analyse_wav(wav_bytes, rec, filename, progress_cb):
 
     rec_label = next(k for k, v in RECORDS.items() if v is rec)
 
+    desc_suffix = f"\n{description}" if description else ""
+    wav_name    = filename
     fig_raw = make_summary_fig(
         level_arr, thd_L_raw, thd_R_raw, results, 8,
         rec_label, ylabel="THD (%)", title_suffix="  —  Raw THD",
+        norm_note=f"File: {wav_name}{desc_suffix}",
     )
     norm_note = (f"THD_norm = THD × ({ref_um}/µm) × (r_mm/{ref_r_mm:.0f})    "
-                 f"ref: {ref_um} µm / {ref_r_mm:.0f} mm")
+                 f"ref: {ref_um} µm / {ref_r_mm:.0f} mm\nFile: {wav_name}{desc_suffix}")
     fig_norm = make_summary_fig(
         level_arr, thd_L_norm, thd_R_norm, results, 8,
         rec_label, ylabel="Normalised THD (%)",
@@ -318,8 +321,9 @@ st.caption("Upload a WAV recording of a tracking-ability test record. "
 # Sidebar — record selection
 with st.sidebar:
     st.header("Configuration")
-    rec_name = st.selectbox("Test record", list(RECORDS.keys()))
-    rec      = RECORDS[rec_name]
+    rec_name    = st.selectbox("Test record", list(RECORDS.keys()))
+    rec         = RECORDS[rec_name]
+    description = st.text_input("Description", placeholder="e.g. My cartridge — setup notes here")
 
     st.markdown("---")
     st.markdown(f"**Frequency:** {rec['fund_hz']} Hz")
@@ -343,14 +347,15 @@ uploaded = st.file_uploader(
 
 if uploaded is not None:
     wav_bytes = uploaded.read()
-    st.info(f"File: **{uploaded.name}**  ({len(wav_bytes)/1e6:.1f} MB)")
+    desc_line = f" — {description}" if description else ""
+    st.info(f"File: **{uploaded.name}**  ({len(wav_bytes)/1e6:.1f} MB){desc_line}")
 
     progress = st.progress(0, text="Starting…")
 
     def progress_cb(frac, msg):
         progress.progress(frac, text=msg)
 
-    result, err = analyse_wav(wav_bytes, rec, uploaded.name, progress_cb)
+    result, err = analyse_wav(wav_bytes, rec, uploaded.name, progress_cb, description)
     progress.empty()
 
     if err:
@@ -373,8 +378,8 @@ if uploaded is not None:
                 })
             st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
-        # Two tabs: raw | normalised
-        tab_raw, tab_norm = st.tabs(["Raw THD", "Normalised THD"])
+        # Two tabs: normalised (default) | raw
+        tab_norm, tab_raw = st.tabs(["Normalised THD", "Raw THD"])
 
         with tab_raw:
             st.image(raw_png, use_container_width=True)
